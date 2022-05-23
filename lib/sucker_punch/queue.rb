@@ -26,7 +26,6 @@ module SuckerPunch
           )
         Concurrent::ThreadPoolExecutor.new(**options)
       end
-
       new(name, pool)
     end
 
@@ -36,6 +35,10 @@ module SuckerPunch
         queues.push new(name, pool)
       end
       queues
+    end
+
+    def self.delete(queue_name)
+      QUEUES.delete(queue_name)
     end
 
     def self.clear
@@ -107,6 +110,29 @@ module SuckerPunch
         SuckerPunch.logger.warn("Queued jobs didn't finish before shutdown_timeout...killing remaining jobs")
         queues.each { |queue| queue.kill }
       end
+    end
+
+    # Shutdown specific queue name based on a request
+    # force it to kill if it's not shutting down
+    def self.shutdown(queue_name, timeout: 3)
+      # If a job is enqueued right before the script exits
+      # (command line, rake task, etc.), the system needs an
+      # interval to allow the enqueue jobs to make it in to the system
+      # otherwise the queue will look idle
+      sleep PAUSE_TIME
+
+      queues = all
+
+      # Issue shutdown to queue and let it wrap up it's work. This
+      # prevents new jobs from being enqueued and lets the pool clean up
+      # after itself
+      queues.each { |queue| queue.shutdown if queue.name == queue_name }
+      SuckerPunch.logger.info("Stopped #{queue_name} Queue...")
+
+      # pause a timeout and kill the queue if it's not stopped
+      sleep timeout
+      SuckerPunch.logger.warn("Queued jobs didn't finish before shutdown_timeout...killing remaining jobs")
+      queues.each { |queue| queue.kill if queue.name == queue_name }
     end
 
     attr_reader :name

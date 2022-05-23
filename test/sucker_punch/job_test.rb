@@ -27,9 +27,25 @@ module SuckerPunch
         workers: 3
       }
       FakeLatchJob.perform_through(options, arr, latch)
-      binding.pry
       latch.wait(1)
       assert_equal 1, arr.size
+    end
+
+    def test_shutdown_specific_queue_name
+      arr = Concurrent::Array.new
+      latch = Concurrent::CountDownLatch.new
+      ["q1", "q2"].each do |queue|
+        options = {
+          queue: queue,
+          workers: 3
+        }
+        (0..20).each do |number|
+          FakeSlowJob.perform_through(options)
+        end
+      end
+      SuckerPunch::Queue.shutdown("q1")
+      queue_workers = SuckerPunch::Queue.stats["q1"]["workers"]["total"]
+      assert_equal 0, queue_workers
     end
 
     def test_job_isnt_run_with_perform_async_if_sucker_punch_is_shutdown
